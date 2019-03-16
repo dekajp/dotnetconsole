@@ -1,0 +1,256 @@
+﻿<?xml version="1.0" ?>
+<!-- this build file is inspired by nAnt project build file. ( so i went to nAnt opensource project and copied their build file and changed it -->
+
+<!--
+
+
+1) Build is designed to have same version number across all dll and exe and output to be copied into one location.
+2) the assembly info and app.config file is available in solution folder (these are common to all project)
+3) there were some problems where nAnt was trying to build individual project using build file using CSC compiler. if i put more stress on my brain couple weeks back i 
+commented that code because , when i was executing the MSbuild task the project were getting recompiled again.
+4) i think i went to msbuild task because of issue with refrences and all (took much work with CSC compiler) - whatever now MSBUILD task is standard
+5) As of now MSBUILD task does almost everything realted to build. it also copies the link files ( app.config and commonassemblyuinfo file)
+6) then a quick corflag test is executed to check the binary PE data , this is more from logging perspective if soemthing goes wrong with BIT(32 or 64) bit image then this 
+info will be useful.
+7) a basic test to execute each bach process library. you will see the Usage function of Driver class has a blank call to load the process in memory. this will further 
+enforce the (32 or 64) bit compatibility test.
+8) Before the MS build task executes , the common assembly info file is generated and app config is updated with latest version
+  
+  -->
+
+<!--
+
+/*
+ *  GUIDELINES FOR UPDATING VERSION - this will ofcourse change in future :)
+ * 
+ * <major version>.<minor version>.<build number>.<revision>
+ * 
+ * <major version>==> 1 , change it if changes happens to be in Core Library
+ * <minor version>==> THIS WILL REPRESENT THE NUMBER OF DRIVERS AVAILABLE 
+ * <build number>==> Any changes to either config  file or any program will increment to 1 number
+ * <revision> ==> this is auto generated nummber 
+  
+  <property name="project.version" value="1.7.1" unless="${property::exists('project.version')}" />
+  
+ * */
+ -->
+
+
+
+<!--
+ ==========================================================
+ 2 THINGS YOU WANT TO CHANGE BEFORE YOU DO BUILD
+ ========================================================
+ 
+ 1) VERSION ==> <property name="project.version" value="1.7.1" unless="${property::exists('project.version')}" />
+ 2) build Platform ==> <property name="build.platform" value="Any CPU" /> 
+
+-->
+
+
+
+
+<project name="nant" default="build">
+  <!-- set build.date property to current date in format yyyy-MM-dd -->
+  <tstamp property="build.date" pattern="yyyy-MM-dd" />
+
+  <!-- global project settings - DO NOT CHANGE THEM IN SUB -build FILES -->
+  <property name="project.name" value="BatchManager" />
+  <property name="project.version" value="1.0.0" unless="${property::exists('project.version')}" />
+  <!-- dev | beta# | release -->
+  <property name="project.release.type" value="release" unless="${property::exists('project.release.type')}" />  
+  
+  <!-- Since build file is inside solution folder so root is therefore the ../ -->
+  <property name="filepath.root" value="C:\dotnetConsole" unless="${property::exists('filepath.root')}" />
+  <property name="filepath.BatchManagerSolution" value="BatchManagerSolution" unless="${property::exists('filepath.BatchManagerSolution')}" />
+  <property name="filepath.project.assemblyinfo" value="${filepath.BatchManagerSolution}/CommonAssemblyInfo.cs" unless="${property::exists('filepath.project.assemblyinfo')}" />
+  <property name="filepath.sharedbin" value="../sharedbin" unless="${property::exists('filepath.sharedbin')}" />
+  
+  <property name="create.assemblyinfo" value="true" />
+
+  <!-- ######################################################################################################################-->
+  <!-- default configuration -->
+  <property name="build.number" value="${math::abs(math::floor(timespan::get-total-days(datetime::now() - datetime::parse('01/01/2000'))))}" />
+  <property name="nant.settings.currentframework" value="net-4.0" />  
+  <!-- ==============================================================================================================-->
+  <!--- CHANGE THE PLATFORM SETTING HERE-->  
+  <property name="build.platform" value="Any CPU" /><!-- Any CPU,x86,x64-->  
+  <property name="project.config" value="debug" /> <!-- debug | release  ONLY LOWERCASE -->
+  <!-- ==============================================================================================================-->
+  <!-- ######################################################################################################################-->
+
+  <target name="init" description="Initializes build properties">
+
+    <echo>
+      -----------------------------------------------------------------------------------------------------------------
+      -----------------------------------------------------------------------------------------------------------------
+      TASK : INITIALIZE
+      -----------------------------------------------------------------------------------------------------------------
+      ----------------------------------------------------------------------------------------------------------------- 
+    </echo>
+    <tstamp>
+      <formatter property="timestamp" pattern="yyMMdd_HHmm"/>
+    </tstamp>
+
+    <property name="build.log.filename" value="build_${timestamp}.log"/>
+    <echo message="build.log.filename: ${build.log.filename}" />  
+    <echo message="Build Start at: ${datetime::now()}" />    
+    <call target="${project.config}" />
+  </target>
+  
+  <target name="create-common-assemblyinfo" >
+   
+    <attrib file="CommonAssemblyInfo.cs" readonly="false" if="${file::exists('CommonAssemblyInfo.cs')}" />   
+    <asminfo output="CommonAssemblyInfo.cs" language="CSharp">
+      <imports>
+        <import namespace="System" />
+        <import namespace="System.Reflection" />
+        <import namespace="System.Runtime.InteropServices" />
+      </imports>
+      <attributes>
+        <attribute type="ComVisibleAttribute" value="false" />
+        <attribute type="CLSCompliantAttribute" value="true" />
+        <attribute type="AssemblyTitleAttribute" value="your product" />
+        <attribute type="AssemblyDescriptionAttribute" value="A suite of Batch Applications" />
+        <attribute type="AssemblyConfigurationAttribute" value="${project.release.type}" />
+        <attribute type="AssemblyCompanyAttribute" value="www.yourcompany.com" />
+        <attribute type="AssemblyProductAttribute" value="your product" />
+        <attribute type="AssemblyCopyrightAttribute" value="Copyright (C) ${datetime::get-year(datetime::now())} your company " />
+        <attribute type="AssemblyTrademarkAttribute" value="" />
+        <attribute type="AssemblyCultureAttribute" value="" />
+        <attribute type="AssemblyVersionAttribute" value="${project.version}.${build.number}" />
+        <attribute type="AssemblyInformationalVersionAttribute" value="${project.version}" />
+      </attributes>
+    </asminfo>
+  </target>
+
+  
+  <target name="debug" description="Perform a 'debug' build">
+    <property name="project.config" value="debug" />
+    <property name="build.debug" value="true" />
+    <property name="build.dir" value="${project::get-base-directory()}/build/${framework::get-target-framework()}.${platform::get-name()}/${project.name}-${project.config}/${build.platform}" />
+  </target>
+
+ 
+  <target name="release" description="Perform a 'release' build">
+    <property name="project.config" value="release" />
+    <property name="build.debug" value="false" />
+    <property name="build.dir" value="${project::get-base-directory()}/build/${framework::get-target-framework()}.${platform::get-name()}/${project.name}-${project.config}/${build.platform}" />
+  </target>
+  
+  <target name="build" depends="init,create-common-assemblyinfo" description="Builds current configuration">
+
+    <loadtasks assembly="${nant::get-base-directory()}/../../nantcontrib-0.85/bin/NAnt.Contrib.Tasks.dll" />
+    
+    <!--<property name="project.config" value="release" />
+    <property name="build.debug" value="true" />
+    <property name="build.dir" value="${project::get-base-directory()}/build/${framework::get-target-framework()}.${platform::get-name()}/${project.name}-${project.config}/${build.platform}" />-->
+
+    <call target="${project.config}" ></call>
+    
+    <mkdir dir="${build.dir}/bin" />
+
+
+    <delete>
+      <fileset basedir="${build.dir}/bin">
+        <include name="**/*"/>     
+      </fileset>
+    </delete>
+
+
+    <record name="${build.dir}/bin/${build.log.filename}"	action="Start" level="Verbose"/>
+    <echo message="Build logged to ${build.dir}/bin/${build.log.filename}"/>
+
+    
+    <!-- Executed MSBuild Tasks on this -->
+    <nant buildfile="../BatchConsole/BatchConsole.build" target="build" />
+    <nant buildfile="../BatchManagerWinForm/BatchManagerWinForm.build" target="build" />
+
+
+    <!-- Delete the PDB Files-->
+    <!--<delete>
+      <fileset basedir="${build.dir}/bin">
+        <include name="**/*.pdb"/>
+      </fileset>
+    </delete>-->
+
+    <!-- Execute the CornFlags -->
+    
+    <nant buildfile="../BatchManager.Utils/BatchManagerUtils.build" target="petarget" />    
+    <nant buildfile="../SampleBatchProgram/SampleBatchProgram.build" target="petarget" /> 
+    <nant buildfile="../BatchManager/BatchManager.build" target="petarget" />
+    <nant buildfile="../BatchConsole/BatchConsole.build" target="petarget" />
+   <nant buildfile="../BatchManagerWinForm/BatchManagerWinForm.build" target="petarget" />
+
+
+    <!-- Test your build executables -->
+
+    <nant buildfile="../BatchConsole/BatchConsole.build" target="test" />
+    <nant buildfile="../SampleBatchProgram/SampleBatchProgram.build" target="test" />
+    <nant buildfile="../BatchManager/BatchManager.build" target="test" />
+
+
+    <if test="${project.config=='release'}">
+        <call target="publish-appconfig" ></call>
+    </if>
+    
+  </target>
+
+  <target name="publish-appconfig" description="add the version to app.config file">
+    <!--<echo append="true" file="App.config">
+&lt;!  Build Version : ${project.version}.${build.number}  on  ${datetime::now()} &gt; </echo>-->
+    <xmlpoke
+    file="App.config"
+    xpath="/configuration/buildinfo/info/@version" value="${project.version}.${build.number}" />
+
+    <xmlpoke
+    file="App.config"
+    xpath="/configuration/buildinfo/info/@date" value="${datetime::now()}" />
+
+    <xmlpoke
+   file="App.config"
+   xpath="/configuration/buildinfo/info/@buildmachine" value="${environment::get-machine-name()}" />
+    
+  </target>
+
+
+  <target name="buildall" description="Perform a 'release' build">
+    
+    <delete>
+      <fileset basedir="${project::get-base-directory()}/build/${framework::get-target-framework()}.${platform::get-name()}">
+        <include name="**/*"/>
+      </fileset>
+    </delete>
+
+    <delete dir="${project::get-base-directory()}/build/${framework::get-target-framework()}.${platform::get-name()}" />
+    
+    <property name="build.platform" value="Any CPU" />
+    <!-- Any CPU,x86,x64-->
+    <property name="project.config" value="debug" />
+    <!-- debug | release  ONLY LOWERCASE -->
+    <call target="build" ></call>
+    
+    <property name="build.platform" value="x86" />    
+    <property name="project.config" value="debug" />    
+    <call target="build" ></call>
+    
+    <property name="build.platform" value="x64" />    
+    <property name="project.config" value="debug" />    
+    <call target="build" ></call>
+    
+    
+    <property name="build.platform" value="Any CPU" />    
+    <property name="project.config" value="release" />    
+    <call target="build" ></call>
+    
+    <property name="build.platform" value="x86" />    
+    <property name="project.config" value="release" />    
+    <call target="build" ></call>
+    
+    <property name="build.platform" value="x64" />    
+    <property name="project.config" value="release" />    
+    <call target="build" ></call>
+    
+  </target>
+  
+</project>
